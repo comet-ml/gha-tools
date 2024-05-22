@@ -82,4 +82,6 @@ runs:
         TAG: ${{ steps.get-tag.outputs.tag}}
       run: |
         # do tag create
-        echo new tag: ${TAG}
+        set -x
+        git tag ${TAG}
+        git push origin ${TAG}

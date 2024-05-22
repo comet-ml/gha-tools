@@ -28,5 +28,5 @@ jobs:
         uses: comet-ml/gha-tools/get-new-tag@main
         with:
           do-checkout: 'true'
-          default-tag: '0.1.0'
+          default-tag: '0.0.1'
           do-tag-create: 'true'
