@@ -23,9 +23,10 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
 
-
       # Runs a single command using the runners shell
       - name: get version
         uses: comet-ml/gha-tools/get-new-tag@main
         with:
           do-checkout: 'true'
+          default-tag: '0.1.0'
+          do-tag-create: 'true'

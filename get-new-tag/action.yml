@@ -3,11 +3,15 @@ description: Get latest parent/global tag for commit
 inputs:
   do-checkout:
     description: do repo checkout
-    default: "true"
+    default: 'true'
     required: false
   default-tag:
     description: set tag if nothing found
     default: '0.0.0'
+    required: false
+  do-tag-create:
+    description: create new tag
+    default: 'false'
     required: false
 outputs:
   tag:
@@ -70,3 +74,12 @@ runs:
           fi
         fi
         echo "tag=${new_tag}" | tee -a "${GITHUB_OUTPUT}"
+
+    - name: create tag
+      if: inputs.do-tag-create != 'false'
+      shell: bash
+      env:
+        TAG: ${{ steps.get-tag.outputs.tag}}
+      run: |
+        # do tag create
+        echo new tag: ${TAG}
