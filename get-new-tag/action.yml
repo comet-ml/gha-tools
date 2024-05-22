@@ -1,16 +1,63 @@
 name: Get Latest Tag
 description: Get latest parent/global tag for commit
+inputs:
+  do-checkout:
+    description: do repo checkout
+    default: "false"
+    required: false
 outputs:
   tag:
-    value: ${{ steps.get-tag.outputs.image_name}}
+    value: ${{ steps.get-tag.outputs.tag}}
     description: latest tag
 
 runs:
   using: composite
   steps:
+    - name: do checkout
+      if: inputs.do-checkout == "true"
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        sparse-checkout: |
+          version.txt
 
     - name: get tag
       id: get-tag
       shell: bash
       run: |
-        echo "version=0.0.0" | tee -a ${GITHUB_OUTPUT}
+        # get latest tag
+        set -x
+        # getting latest parent taggithub.event.number
+        latest_parent_tag=$(git describe --tags --first-parent ${GITHUB_SHA} | sed -r 's/^(.*)-[0-9]+-[0-9a-h]+$/\1/')
+        eval $(echo $latest_parent_tag | sed -r 's/^(v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?$/parent_prefix=\1;parent_major=\2;parent_minor=\4;parent_patch=\6;parent_extra=\7;/')
+        if [ $? -ne 0 ] ; then
+          tag_matcher=
+        else
+          tag_matcher=$parent_prefix
+          if [ -n $parent_minor ] ; then
+            tag_matcher="${tag_matcher}.${parent_minor}"
+          fi
+          if [ -n $parent_patch ] ; then
+            tag_matcher="${tag_matcher}."
+          fi
+        fi
+        # get the latest tag
+        latest_tag=$(git describe --tags --match="${tag_matcher}*" HEAD | sed -r 's/^(.*)-[0-9]+-[0-9a-h]+$/\1/')
+        eval $(echo $latest_tag | sed -r 's/^(v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?$/prefix=\1;major=\2;minor=\4;patch=\6;extra=\7;/')
+        if [ $? -ne 0 ] ; then
+          if [ -z "${tag_matcher}" ] ; then
+            # not found any matched tags
+            new_tag="0.0.1"
+          fi
+        else
+          # tag found, we need increase patch
+          new_tag="${prefix}"
+          if [ -z "${minor}" ] ; then
+            new_tag="${prefix}.0"
+          elif [ -z "${patch}" ] ; then
+            new_tag="${prefix}.$(( minor + 1 ))"
+          else
+            new_tag="${prefix}.${minor}.$(( patch +1 ))"
+          fi
+        fi
+        echo "tag=${new_tag}" | tee -a "${GITHUB_OUTPUT}"
