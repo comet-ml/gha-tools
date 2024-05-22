@@ -1,0 +1,16 @@
+name: Get Latest Tag
+description: Get latest parent/global tag for commit
+outputs:
+  tag:
+    value: ${{ steps.get-tag.outputs.image_name}}
+    description: latest tag
+
+runs:
+  using: composite
+  steps:
+
+    - name: get tag
+      id: get-tag
+      shell: bash
+      run: |
+        echo "0.0.0" | tee -a ${GITHUB_OUTPUT}
