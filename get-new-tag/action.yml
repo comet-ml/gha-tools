@@ -13,4 +13,4 @@ runs:
       id: get-tag
       shell: bash
       run: |
-        echo "0.0.0" | tee -a ${GITHUB_OUTPUT}
+        echo "version=0.0.0" | tee -a ${GITHUB_OUTPUT}
