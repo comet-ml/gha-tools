@@ -51,8 +51,8 @@ runs:
         fi
         new_tag="${parent_prefix}.${parent_minor:-0}.$(( ${parent_patch:-0} + ${{ inputs.increment }} ))${parent_extra}"
         # check if new tag exist
-        new_tag="$( git tag --list "${new_tag}" )"
-        if [ -n "${new_tag}" ] ; then
+        tag="$( git tag --list "${new_tag}" )"
+        if [ -n "${tag}" ] ; then
           # tag found, we need increase patch
           latest_tag_patch="$( git tag --list "${parent_prefix}.${parent_minor:-0}.*${parent_extra}" | tail -n 1 | sed -r 's/^[^.][0-9]*\.[0-9]+\.([0-9]+)[^0-9]?.*$/\1/' )"
           new_tag="${parent_prefix}.${parent_minor:-0}.$(( ${latest_tag_patch:-0} + ${{ inputs.increment }} ))${parent_extra}"
