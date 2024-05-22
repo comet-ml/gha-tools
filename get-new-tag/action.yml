@@ -3,7 +3,7 @@ description: Get latest parent/global tag for commit
 inputs:
   do-checkout:
     description: do repo checkout
-    default: "false"
+    default: "true"
     required: false
 outputs:
   tag:
@@ -14,10 +14,11 @@ runs:
   using: composite
   steps:
     - name: do checkout
-      if: inputs.do-checkout == 'true'
+      if: inputs.do-checkout != 'false'
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0
+        # fetch-depth: 0
+        fetch-tags: true
         sparse-checkout: |
           version.txt
 
