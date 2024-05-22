@@ -37,7 +37,9 @@ runs:
         # get latest tag
         set -x
         # getting latest parent taggithub.event.number
-        eval "$(git describe --tags --first-parent ${GITHUB_SHA} || true | sed -r 's/^(.*)-([0-9]+)-[0-9a-h]+$/latest_parent_tag=\1;parent_tag_offset=\2;/')"
+        parent_tag="$(git describe --tags --first-parent ${GITHUB_SHA} || true"
+
+        eval "$(echo ${parent_tag} | sed -r 's/^(.*)-([0-9]+)-[0-9a-h]+$/latest_parent_tag=\1;parent_tag_offset=\2;/')"
         echo "offset: ${parent_tag_offset}"
         eval $(echo $latest_parent_tag | sed -r 's/^(v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?$/parent_prefix=\1;parent_major=\2;parent_minor=\4;parent_patch=\6;parent_extra=\7;/')
         if [ $? -ne 0 ] ; then
