@@ -49,31 +49,13 @@ runs:
           echo "skip_creation=true" | tee -a "${GITHUB_OUTPUT}"
           exit
         fi
-        if [ $? -ne 0 ] ; then
-          tag_matcher=
-        else
-          tag_matcher=$parent_prefix
-          if [ -n $parent_minor ] ; then
-            tag_matcher="${tag_matcher}.${parent_minor}"
-          fi
-          if [ -n $parent_patch ] ; then
-            tag_matcher="${tag_matcher}."
-          fi
-        fi
-        # get the latest tag
-        eval "$(git describe --tags --long --match="${tag_matcher}*" HEAD | sed -r 's/^((v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?)-([0-9]+)-[0-9a-h]+$/tag=\1;tag_prefix=\2;tag_major=\3;tag_minor=\5;tag_patch=\7;tag_extra=\8;tag_offset=\9;/')"
-        if [ -z "${tag_major}" ] ; then
-          new_tag="${{ inputs.default-tag }}"
-        else
+        new_tag="${parent_prefix}.${parent_minor:-0}.$(( ${parent_patch:-0} + ${{ inputs.increment }} ))${parent_extra}"
+        # check if new tag exist
+        new_tag="$(git tag --list "${new_tag}"
+        if [ -n "${tag}" ] ; then
           # tag found, we need increase patch
-          new_tag="${tag_prefix}"
-          if [ -z "${tag_minor}" ] ; then
-            new_tag="${tag_prefix}.0"
-          elif [ -z "${tag_patch}" ] ; then
-            new_tag="${tah_prefix}.$(( tag_minor + ${{ inputs.increment }} ))"
-          else
-            new_tag="${tag_prefix}.${tag_minor}.$(( tag_patch + ${{ inputs.increment }} ))"
-          fi
+          latest_tag_patch=$( git tag --list "${parent_prefix}.${parent_minor:-0}.*${parent_extra} | tail -n 1 | sed -r 's/^[^.][0-9]*\.[0-9]+\.([0-9]+)[^0-9]?.*$/\1/' )"
+          new_tag=new_tag="${parent_prefix}.${parent_minor:-0}.$(( ${latest_tag_patch:-0} + ${{ inputs.increment }} ))${parent_extra}"
         fi
         echo "tag=${new_tag}" | tee -a "${GITHUB_OUTPUT}"
 
