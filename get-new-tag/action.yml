@@ -41,8 +41,14 @@ runs:
         # get latest tag
         set -x +e
         # getting latest parent taggithub.event.number
-        eval "$(git describe --tags --long --first-parent ${GITHUB_SHA} | sed -r 's/^(v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?-([0-9]+)-[0-9a-h]+$/parent_prefix=\1;parent_major=\2;parent_minor=\4;parent_patch=\6;parent_extra=\7;parent_tag_offset=\8;/')"
+        eval "$(git describe --tags --long --first-parent ${GITHUB_SHA} | sed -r 's/^((v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?)-([0-9]+)-[0-9a-h]+$/parent_tag=\1;parent_prefix=\2;parent_major=\3;parent_minor=\5;parent_patch=\7;parent_extra=\8;parent_tag_offset=\9;/')"
         echo "offset ${parent_tag_offset}"
+        if [ $parent_tag_offset -eq 0 ] ; then
+          # this commit already has tag
+          echo "tag=${parent_tag}" | tee -a "${GITHUB_OUTPUT}"
+          echo "skip_creation=true" | tee -a "${GITHUB_OUTPUT}"
+          exit
+        fi
         if [ $? -ne 0 ] ; then
           tag_matcher=
         else
@@ -55,7 +61,7 @@ runs:
           fi
         fi
         # get the latest tag
-        eval "$(git describe --tags --long --match="${tag_matcher}*" HEAD | sed -r 's/^(v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?-([0-9]+)-[0-9a-h]+$/tag_prefix=\1;tag_major=\2;tag_minor=\4;tag_patch=\6;tag_extra=\7;tag_offset=\8;/')"
+        eval "$(git describe --tags --long --match="${tag_matcher}*" HEAD | sed -r 's/^((v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?)-([0-9]+)-[0-9a-h]+$/tag=\1;tag_prefix=\2;tag_major=\3;tag_minor=\5;tag_patch=\7;tag_extra=\8;tag_offset=\9;/')"
         if [ -z "${tag_major}" ] ; then
           new_tag="${{ inputs.default-tag }}"
         else
@@ -72,7 +78,7 @@ runs:
         echo "tag=${new_tag}" | tee -a "${GITHUB_OUTPUT}"
 
     - name: create tag
-      if: inputs.do-tag-create != 'false'
+      if: ${{ inputs.do-tag-create != 'false' && steps.get-tag.outputs.skip_creation != 'true' }}
       shell: bash
       env:
         TAG: ${{ steps.get-tag.outputs.tag}}
