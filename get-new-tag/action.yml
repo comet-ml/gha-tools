@@ -41,7 +41,7 @@ runs:
         # get latest tag
         set -x +e
         # getting latest parent taggithub.event.number
-        eval "$(git describe --tags --long --first-parent ${GITHUB_SHA} | sed -r 's/^((v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?)-([0-9]+)-[0-9a-h]+$/parent_tag=\1;parent_prefix=\2;parent_major=\3;parent_minor=\5;parent_patch=\7;parent_extra=\8;parent_tag_offset=\9;/')"
+        eval "$( git describe --tags --long --first-parent ${GITHUB_SHA} | sed -r 's/^((v?([0-9]+))(\.([0-9]+)(\.([0-9]+)(.*))?)?)-([0-9]+)-[0-9a-h]+$/parent_tag=\1;parent_prefix=\2;parent_major=\3;parent_minor=\5;parent_patch=\7;parent_extra=\8;parent_tag_offset=\9;/')"
         echo "offset ${parent_tag_offset}"
         if [ $parent_tag_offset -eq 0 ] ; then
           # this commit already has tag
@@ -51,11 +51,11 @@ runs:
         fi
         new_tag="${parent_prefix}.${parent_minor:-0}.$(( ${parent_patch:-0} + ${{ inputs.increment }} ))${parent_extra}"
         # check if new tag exist
-        new_tag="$(git tag --list "${new_tag})"
+        new_tag="$( git tag --list "${new_tag}" )"
         if [ -n "${tag}" ] ; then
           # tag found, we need increase patch
           latest_tag_patch=$( git tag --list "${parent_prefix}.${parent_minor:-0}.*${parent_extra} | tail -n 1 | sed -r 's/^[^.][0-9]*\.[0-9]+\.([0-9]+)[^0-9]?.*$/\1/' )"
-          new_tag=new_tag="${parent_prefix}.${parent_minor:-0}.$(( ${latest_tag_patch:-0} + ${{ inputs.increment }} ))${parent_extra}"
+          new_tag="${parent_prefix}.${parent_minor:-0}.$(( ${latest_tag_patch:-0} + ${{ inputs.increment }} ))${parent_extra}"
         fi
         echo "tag=${new_tag}" | tee -a "${GITHUB_OUTPUT}"
 
