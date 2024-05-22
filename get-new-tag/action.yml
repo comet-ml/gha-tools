@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: do checkout
-      if: inputs.do-checkout == "true"
+      if: inputs.do-checkout == 'true'
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
