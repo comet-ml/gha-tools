@@ -1,8 +1,8 @@
-name: Push ECR
-description: Push to ECR
+name: Login to ECR
+description: Login to  ECR
 branding:
-  color: red
-  icon: upload
+  color: orange
+  icon: corner-right-up
 inputs:
   role-to-assume:
     description: role to access AWS
@@ -14,10 +14,7 @@ inputs:
   role-session-name:
     description: AWS role session name
     required: false
-  image-name:
-    description: Image to push
-    required: true
-    
+  
 outputs:
   registry:
     value: ${{ steps.ecr.outputs.registry }}
@@ -27,16 +24,16 @@ runs:
   using: composite
   steps:
   -
-    name: Login to ECR
-    uses: comet-ml/gha-actions/ecr/login@main
-    id: ecr
+    name: Configure AWS Credentials
+    uses: aws-actions/configure-aws-credentials@v4
     with:
       role-to-assume: ${{ inputs.role-to-assume }}
       role-session-name: ${{ inputs.role-session-name }}
       aws-region: ${{ inputs.aws-region }}
-  - 
-    name: Set tags and push
-    shell: bash
-    run: |
-      docker tag ${{ inputs.image-name }} ${{ steps.ecr.outputs.registry }}/${{ inputs.image-name }}
+  -
+    name: Login to Amazon ECR
+    id: ecr
+    uses: aws-actions/amazon-ecr-login@v2
+    with:
+      mask-password: true
 
