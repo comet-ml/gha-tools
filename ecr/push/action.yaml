@@ -28,7 +28,7 @@ runs:
   steps:
   -
     name: Login to ECR
-    uses: comet-ml/gha-actions/ecr/login@main
+    uses: comet-ml/gha-tools/ecr/login@main
     id: ecr
     with:
       role-to-assume: ${{ inputs.role-to-assume }}
