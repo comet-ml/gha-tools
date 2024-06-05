@@ -43,5 +43,5 @@ runs:
     name: Set tags and push
     shell: bash
     run: |
-      docker tag ${{ inputs.image-name }} ${{ steps.ecr.output.registry }}/${{ inputs.image-name }}
+      docker tag ${{ inputs.image-name }} ${{ steps.ecr.outputs.registry }}/${{ inputs.image-name }}
 
