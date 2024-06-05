@@ -1,0 +1,47 @@
+name: Push ECR
+description: Push to ECR
+branding:
+  color: red
+  icon: upload
+inputs:
+  role-to-assume:
+    description: role to access AWS
+    required: true
+  aws-region:
+    description: aws region
+    default: us-east-1
+    required: false
+  role-session-name:
+    description: AWS role session name
+    default: ${{ vars.ROLE_SESSION_NAME }}
+    required: false
+  image-name:
+    description: Image to push
+    required: true
+    
+outputs:
+  registry:
+    value: ${{ steps.ecr.outputs.registry }}
+    description: ECR host
+
+runs:
+  using: composite
+  steps:
+  -
+    name: Configure AWS Credentials
+    uses: aws-actions/configure-aws-credentials@v2
+    with:
+      role-to-assume: ${{ inputs.role-to-assume }}
+      aws-region: ${{ inputs.aws-region }}
+  -
+    name: Login to Amazon ECR
+    id: ecr
+    uses: aws-actions/amazon-ecr-login@v1
+    with:
+      mask-password: true
+  - 
+    name: Set tags and push
+    shell: bash
+    run: |
+      docker tag ${{ inputs.image-name }} ${{ steps.ecr.output.registry }}/${{ inputs.image-name }}
+
