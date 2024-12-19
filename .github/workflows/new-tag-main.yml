@@ -20,8 +20,13 @@ jobs:
 
       # Runs a single command using the runners shell
       - name: get version
+        id: tag
         uses: comet-ml/gha-tools/get-new-tag@main
         with:
           do-checkout: 'true'
           default-tag: '0.0.1'
           do-tag-create: 'true'
+
+      - name: Summary
+        run: |
+          echo "New tag is ${{steps.tag.outputs.tag}}" >> $GITHUB_STEP_SUMMARY
