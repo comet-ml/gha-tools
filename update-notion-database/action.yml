@@ -39,8 +39,10 @@ runs:
         UNIQUE_FIELDS: ${{ inputs.unique_fields }}
       run: |
         echo "DEBUG:"
+        echo "::add-mask::false"
         echo "NOTION_TOKEN is ${NOTION_TOKEN}"
         echo "NOTION_DATABASE_ID is ${NOTION_DATABASE_ID}"
+        echo "::add-mask::true"
         echo "FIELDS_JSON is ${FIELDS_JSON}"
         echo "UNIQUE_FIELDS is ${UNIQUE_FIELDS}"
 
