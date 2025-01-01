@@ -49,9 +49,7 @@ runs:
         def format_date(date_str):
             """Convert various date formats to Notion's expected ISO format"""
             try:
-                # Parse the date string
                 parsed_date = parser.parse(date_str)
-                # Format for Notion (ISO 8601)
                 return parsed_date.isoformat()
             except Exception as e:
                 print(f"Error parsing date {date_str}: {str(e)}")
@@ -101,8 +99,7 @@ runs:
                 if formatted_date:
                     return {
                         'date': {
-                            'start': formatted_date,
-                            'end': None
+                            'start': formatted_date
                         }
                     }
                 return {'date': None}
@@ -138,16 +135,63 @@ runs:
                 for prop_name, prop_data in properties.items():
                     print(f"- {prop_name}: {prop_data['type']}")
 
+                # Query existing entries
+                print("\nQuerying existing entries...")
+                results = []
+                query = notion.databases.query(database_id)
+                results.extend(query['results'])
+                while query.get('has_more'):
+                    query = notion.databases.query(
+                        database_id,
+                        start_cursor=query['next_cursor']
+                    )
+                    results.extend(query['results'])
+
+                # Check for duplicates
+                print("\nChecking for duplicates...")
+                duplicate_found = False
+                for result in results:
+                    matches = 0
+                    needed_matches = len(unique_fields)
+                    
+                    for unique_field in unique_fields:
+                        # Handle the space in "Date " field name
+                        field_name = unique_field.strip()
+                        if field_name not in fields:
+                            continue
+                            
+                        if field_name not in result['properties']:
+                            continue
+                            
+                        existing_value = get_property_value(result['properties'][field_name])
+                        new_value = fields[field_name]
+                        
+                        if str(existing_value).strip().lower() == str(new_value).strip().lower():
+                            matches += 1
+                            
+                    if matches == needed_matches:
+                        duplicate_found = True
+                        print(f"Duplicate entry found!")
+                        break
+
+                if duplicate_found:
+                    print("Skipping upload due to duplicate entry")
+                    sys.exit(0)
+
                 # Prepare properties for new page
                 new_properties = {}
                 for field_name, field_value in fields.items():
-                    if field_name in properties:
-                        prop_type = properties[field_name]['type']
-                        print(f"\nProcessing field: {field_name}")
+                    # Handle the space in field names
+                    matching_field = next((prop for prop in properties.keys() 
+                                        if prop.strip() == field_name.strip()), None)
+                    
+                    if matching_field:
+                        prop_type = properties[matching_field]['type']
+                        print(f"\nProcessing field: {matching_field}")
                         print(f"Type: {prop_type}")
                         print(f"Value: {field_value}")
-                        new_properties[field_name] = create_property_value(field_value, prop_type)
-                        print(f"Converted to: {new_properties[field_name]}")
+                        new_properties[matching_field] = create_property_value(field_value, prop_type)
+                        print(f"Converted to: {new_properties[matching_field]}")
 
                 # Create new page
                 print("\nCreating new page with properties:")
