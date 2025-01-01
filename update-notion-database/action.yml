@@ -26,46 +26,42 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        pip install notion-df pandas
-
-        echo "DEBUG:"
-        echo "::add-mask::false"
-        echo "NOTION_TOKEN is ${{ inputs.notion_token }}"
-        echo "DATABASE_ID is ${{ inputs.database_id }}"
-        echo "::add-mask::true"
-        echo "FIELDS_JSON is ${{ inputs.fields_json }}"
-        echo "UNIQUE_FIELDS is ${{ inputs.unique_fields }}"
+        pip install notion-df pandas numpy
 
     - name: Update Notion Database
       shell: python
       env:
         NOTION_TOKEN: ${{ inputs.notion_token }}
-        NOTION_API_KEY: ${{ inputs.notion_token }} # add the default env var as well
         DATABASE_ID: ${{ inputs.database_id }}
         FIELDS_JSON: ${{ inputs.fields_json }}
         UNIQUE_FIELDS: ${{ inputs.unique_fields }}
+        NOTION_API_KEY: ${{ inputs.notion_token }}
       run: |
         import os
         import json
         import sys
         from notion_df import download, upload
         import pandas as pd
+        import numpy as np
         from datetime import datetime
 
-        def validate_field_type(value, expected_type):
-            if expected_type == "date":
-                try:
-                    datetime.fromisoformat(value.replace('Z', '+00:00'))
+        def safe_equals(a, b):
+            """Safely compare two values that might be of different types"""
+            try:
+                # Handle None/NaN cases
+                if pd.isna(a) and pd.isna(b):
                     return True
-                except (ValueError, AttributeError):
+                if pd.isna(a) or pd.isna(b):
                     return False
-            elif expected_type == "number":
-                return isinstance(value, (int, float))
-            elif expected_type == "string":
-                return isinstance(value, str)
-            elif expected_type == "boolean":
-                return isinstance(value, bool)
-            return True
+                
+                # Convert to same type if possible
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+                    return float(a) == float(b)
+                
+                # Convert to strings for comparison
+                return str(a).strip().lower() == str(b).strip().lower()
+            except:
+                return False
 
         def main():
             try:
@@ -75,6 +71,9 @@ runs:
                 fields_json = os.environ['FIELDS_JSON']
                 unique_fields = os.environ['UNIQUE_FIELDS'].split(',')
 
+                # Set the API key explicitly
+                os.environ['NOTION_API_KEY'] = notion_token
+
                 # Parse fields JSON
                 try:
                     fields = json.loads(fields_json)
@@ -82,11 +81,14 @@ runs:
                     print("Error: Invalid JSON format in fields_json")
                     sys.exit(1)
 
+                print("Downloading database...")
                 # Download existing database
                 df_existing = download(
                     database_id,
                     notion_token
                 )
+                print("Database downloaded successfully")
+                print(f"Columns in database: {df_existing.columns.tolist()}")
 
                 # Check for required fields
                 if not fields:
@@ -104,7 +106,14 @@ runs:
                         continue
                     
                     if unique_field in fields:
-                        duplicate_mask = df_existing[unique_field] == fields[unique_field]
+                        new_value = fields[unique_field]
+                        print(f"Checking for duplicates in field '{unique_field}' with value: {new_value}")
+                        
+                        # Use custom comparison function
+                        duplicate_mask = df_existing[unique_field].apply(
+                            lambda x: safe_equals(x, new_value)
+                        )
+                        
                         if duplicate_mask.any():
                             duplicate_found = True
                             print(f"Duplicate entry found for field '{unique_field}'")
@@ -117,6 +126,7 @@ runs:
                 # Append new row and upload
                 df_updated = pd.concat([df_existing, new_row], ignore_index=True)
                 
+                print("Uploading updated database...")
                 upload(
                     df_updated,
                     database_id,
@@ -131,6 +141,9 @@ runs:
                 sys.exit(1)
             except Exception as e:
                 print(f"Error: {str(e)}")
+                print(f"Error type: {type(e)}")
+                import traceback
+                print(traceback.format_exc())
                 sys.exit(1)
 
         if __name__ == "__main__":
