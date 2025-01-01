@@ -1,5 +1,5 @@
 name: 'Notion Database Update'
-description: 'Updates a Notion database with provided field values'
+description: 'Updates a Notion database with provided field values, preventing duplicates'
 
 inputs:
   notion_token:
@@ -11,6 +11,10 @@ inputs:
   fields_json:
     description: 'JSON string of field names and values'
     required: true
+  unique_fields:
+    description: 'Comma-separated list of fields that determine uniqueness'
+    required: true
+    default: ''
 
 runs:
   using: "composite"
@@ -103,6 +107,22 @@ def get_database_schema(df):
     
     return schema
 
+def check_duplicate(df, new_row, unique_fields):
+    """Check if a row with the same values in unique_fields already exists"""
+    if not unique_fields:
+        return False
+        
+    query = ' and '.join([
+        f'(df["{field}"] == new_row["{field}"].iloc[0] or '
+        f'(pd.isna(df["{field}"]) and pd.isna(new_row["{field}"].iloc[0])))'
+        for field in unique_fields
+    ])
+    
+    if query:
+        matching_rows = df.query(query) if not df.empty else pd.DataFrame()
+        return len(matching_rows) > 0
+    return False
+
 def update_notion_database():
     try:
         notion_token = os.environ.get("NOTION_TOKEN")
@@ -116,6 +136,9 @@ def update_notion_database():
         fields_json = os.environ.get("FIELDS_JSON")
         if not fields_json:
             raise NotionFieldError("FIELDS_JSON environment variable is not set")
+            
+        unique_fields = os.environ.get("UNIQUE_FIELDS", "").strip()
+        unique_fields = [f.strip() for f in unique_fields.split(',')] if unique_fields else []
 
         try:
             fields = json.loads(fields_json)
@@ -133,6 +156,11 @@ def update_notion_database():
         db_schema = get_database_schema(df)
         validate_fields(fields, db_schema)
         
+        # Validate unique fields exist in schema
+        for field in unique_fields:
+            if field not in db_schema:
+                raise NotionFieldError(f"Unique field '{field}' not found in database schema")
+        
         processed_fields = {}
         for field, value in fields.items():
             try:
@@ -142,6 +170,14 @@ def update_notion_database():
                 raise NotionFieldError(f"Error processing field '{field}': {str(e)}")
         
         new_row = pd.DataFrame([processed_fields])
+        
+        # Check for duplicates
+        if check_duplicate(df, new_row, unique_fields):
+            print("Skipping update: Row with the same unique field values already exists")
+            print("Unique fields checked:", unique_fields)
+            print("Values:", {field: processed_fields[field] for field in unique_fields})
+            return
+        
         updated_df = pd.concat([df, new_row], ignore_index=True)
         
         try:
@@ -151,11 +187,10 @@ def update_notion_database():
                 notion_token=notion_token,
                 update_existing=False
             )
+            print("Successfully updated Notion database")
+            print("Added fields:", json.dumps(processed_fields, default=str, indent=2))
         except Exception as e:
             raise NotionFieldError(f"Failed to upload to Notion database: {str(e)}")
-        
-        print("Successfully updated Notion database")
-        print("Added fields:", json.dumps(processed_fields, default=str, indent=2))
         
     except NotionFieldError as e:
         print(f"Validation Error: {str(e)}")
@@ -174,5 +209,6 @@ EOL
         NOTION_TOKEN: ${{ inputs.notion_token }}
         NOTION_DATABASE_ID: ${{ inputs.database_id }}
         FIELDS_JSON: ${{ inputs.fields_json }}
+        UNIQUE_FIELDS: ${{ inputs.unique_fields }}
       run: python update_notion.py
       shell: bash
