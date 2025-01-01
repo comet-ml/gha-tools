@@ -13,11 +13,11 @@ inputs:
     required: true
   unique_fields:
     description: 'Comma-separated list of fields that determine uniqueness'
-    required: true
+    required: false
     default: ''
 
 runs:
-  using: "composite"
+  using: composite
   steps:
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -25,190 +25,185 @@ runs:
         python-version: '3.x'
     
     - name: Install dependencies
+      shell: bash
       run: |
         python -m pip install --upgrade pip
         pip install notion-df pandas
+
+    - name: Create and run update script
       shell: bash
-    
-    - name: Create Python Script
-      run: |
-        cat > update_notion.py << 'EOL'
-import os
-import json
-from notion_df import download, upload
-import pandas as pd
-from datetime import datetime
-
-class NotionFieldError(Exception):
-    """Custom exception for Notion field validation errors"""
-    pass
-
-def parse_value(value, expected_type=None):
-    if value is None:
-        return None
-        
-    if expected_type == 'date' or expected_type == 'datetime':
-        try:
-            if 'today' in str(value).lower():
-                return datetime.now().date()
-            return pd.to_datetime(value).date()
-        except:
-            raise NotionFieldError(f"Could not parse '{value}' as a date")
-            
-    if expected_type == 'number':
-        try:
-            if '.' in str(value):
-                return float(value)
-            return int(value)
-        except:
-            raise NotionFieldError(f"Could not parse '{value}' as a number")
-            
-    if expected_type in ['select', 'multi-select']:
-        if isinstance(value, list) and expected_type != 'multi-select':
-            raise NotionFieldError(f"Field expects single value but got a list: {value}")
-        return value
-            
-    return str(value)
-
-def validate_fields(fields, db_schema):
-    errors = []
-    
-    for field, properties in db_schema.items():
-        if properties.get('required', False) and field not in fields:
-            errors.append(f"Missing required field: {field}")
-    
-    for field in fields:
-        if field not in db_schema:
-            errors.append(f"Unknown field in database: {field}")
-    
-    if errors:
-        raise NotionFieldError("\n".join(errors))
-
-def get_database_schema(df):
-    schema = {}
-    
-    for column in df.columns:
-        column_data = df[column].dropna()
-        
-        if len(column_data) == 0:
-            schema[column] = {'type': 'text', 'required': False}
-            continue
-            
-        sample_value = column_data.iloc[0]
-        
-        if isinstance(sample_value, (pd.Timestamp, datetime)):
-            schema[column] = {'type': 'date', 'required': False}
-        elif isinstance(sample_value, (int, float)):
-            schema[column] = {'type': 'number', 'required': False}
-        elif isinstance(sample_value, list):
-            schema[column] = {'type': 'multi-select', 'required': False}
-        else:
-            schema[column] = {'type': 'text', 'required': False}
-    
-    return schema
-
-def check_duplicate(df, new_row, unique_fields):
-    """Check if a row with the same values in unique_fields already exists"""
-    if not unique_fields:
-        return False
-        
-    query = ' and '.join([
-        f'(df["{field}"] == new_row["{field}"].iloc[0] or '
-        f'(pd.isna(df["{field}"]) and pd.isna(new_row["{field}"].iloc[0])))'
-        for field in unique_fields
-    ])
-    
-    if query:
-        matching_rows = df.query(query) if not df.empty else pd.DataFrame()
-        return len(matching_rows) > 0
-    return False
-
-def update_notion_database():
-    try:
-        notion_token = os.environ.get("NOTION_TOKEN")
-        if not notion_token:
-            raise NotionFieldError("NOTION_TOKEN environment variable is not set")
-            
-        database_id = os.environ.get("NOTION_DATABASE_ID")
-        if not database_id:
-            raise NotionFieldError("NOTION_DATABASE_ID environment variable is not set")
-            
-        fields_json = os.environ.get("FIELDS_JSON")
-        if not fields_json:
-            raise NotionFieldError("FIELDS_JSON environment variable is not set")
-            
-        unique_fields = os.environ.get("UNIQUE_FIELDS", "").strip()
-        unique_fields = [f.strip() for f in unique_fields.split(',')] if unique_fields else []
-
-        try:
-            fields = json.loads(fields_json)
-        except json.JSONDecodeError as e:
-            raise NotionFieldError(f"Invalid JSON format in fields_json: {str(e)}")
-
-        try:
-            df = download(
-                database_id=database_id,
-                notion_token=notion_token
-            )
-        except Exception as e:
-            raise NotionFieldError(f"Failed to download Notion database: {str(e)}")
-
-        db_schema = get_database_schema(df)
-        validate_fields(fields, db_schema)
-        
-        # Validate unique fields exist in schema
-        for field in unique_fields:
-            if field not in db_schema:
-                raise NotionFieldError(f"Unique field '{field}' not found in database schema")
-        
-        processed_fields = {}
-        for field, value in fields.items():
-            try:
-                expected_type = db_schema[field]['type']
-                processed_fields[field] = parse_value(value, expected_type)
-            except Exception as e:
-                raise NotionFieldError(f"Error processing field '{field}': {str(e)}")
-        
-        new_row = pd.DataFrame([processed_fields])
-        
-        # Check for duplicates
-        if check_duplicate(df, new_row, unique_fields):
-            print("Skipping update: Row with the same unique field values already exists")
-            print("Unique fields checked:", unique_fields)
-            print("Values:", {field: processed_fields[field] for field in unique_fields})
-            return
-        
-        updated_df = pd.concat([df, new_row], ignore_index=True)
-        
-        try:
-            upload(
-                df=updated_df,
-                database_id=database_id,
-                notion_token=notion_token,
-                update_existing=False
-            )
-            print("Successfully updated Notion database")
-            print("Added fields:", json.dumps(processed_fields, default=str, indent=2))
-        except Exception as e:
-            raise NotionFieldError(f"Failed to upload to Notion database: {str(e)}")
-        
-    except NotionFieldError as e:
-        print(f"Validation Error: {str(e)}")
-        exit(1)
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        exit(1)
-
-if __name__ == "__main__":
-    update_notion_database()
-EOL
-      shell: bash
-
-    - name: Update Notion Database
       env:
         NOTION_TOKEN: ${{ inputs.notion_token }}
         NOTION_DATABASE_ID: ${{ inputs.database_id }}
         FIELDS_JSON: ${{ inputs.fields_json }}
         UNIQUE_FIELDS: ${{ inputs.unique_fields }}
-      run: python update_notion.py
-      shell: bash
+      run: |
+        cat << 'EOF' > update_notion.py
+        import os
+        import json
+        from notion_df import download, upload
+        import pandas as pd
+        from datetime import datetime
+
+        class NotionFieldError(Exception):
+            """Custom exception for Notion field validation errors"""
+            pass
+
+        def parse_value(value, expected_type=None):
+            if value is None:
+                return None
+                
+            if expected_type == 'date' or expected_type == 'datetime':
+                try:
+                    if 'today' in str(value).lower():
+                        return datetime.now().date()
+                    return pd.to_datetime(value).date()
+                except:
+                    raise NotionFieldError(f"Could not parse '{value}' as a date")
+                
+            if expected_type == 'number':
+                try:
+                    if '.' in str(value):
+                        return float(value)
+                    return int(value)
+                except:
+                    raise NotionFieldError(f"Could not parse '{value}' as a number")
+                
+            if expected_type in ['select', 'multi-select']:
+                if isinstance(value, list) and expected_type != 'multi-select':
+                    raise NotionFieldError(f"Field expects single value but got a list: {value}")
+                return value
+                
+            return str(value)
+
+        def validate_fields(fields, db_schema):
+            errors = []
+            
+            for field, properties in db_schema.items():
+                if properties.get('required', False) and field not in fields:
+                    errors.append(f"Missing required field: {field}")
+            
+            for field in fields:
+                if field not in db_schema:
+                    errors.append(f"Unknown field in database: {field}")
+            
+            if errors:
+                raise NotionFieldError("\n".join(errors))
+
+        def get_database_schema(df):
+            schema = {}
+            
+            for column in df.columns:
+                column_data = df[column].dropna()
+                
+                if len(column_data) == 0:
+                    schema[column] = {'type': 'text', 'required': False}
+                    continue
+                    
+                sample_value = column_data.iloc[0]
+                
+                if isinstance(sample_value, (pd.Timestamp, datetime)):
+                    schema[column] = {'type': 'date', 'required': False}
+                elif isinstance(sample_value, (int, float)):
+                    schema[column] = {'type': 'number', 'required': False}
+                elif isinstance(sample_value, list):
+                    schema[column] = {'type': 'multi-select', 'required': False}
+                else:
+                    schema[column] = {'type': 'text', 'required': False}
+            
+            return schema
+
+        def check_duplicate(df, new_row, unique_fields):
+            if not unique_fields:
+                return False
+                
+            query = ' and '.join([
+                f'(df["{field}"] == new_row["{field}"].iloc[0] or '
+                f'(pd.isna(df["{field}"]) and pd.isna(new_row["{field}"].iloc[0])))'
+                for field in unique_fields
+            ])
+            
+            if query:
+                matching_rows = df.query(query) if not df.empty else pd.DataFrame()
+                return len(matching_rows) > 0
+            return False
+
+        def update_notion_database():
+            try:
+                notion_token = os.environ.get("NOTION_TOKEN")
+                if not notion_token:
+                    raise NotionFieldError("NOTION_TOKEN environment variable is not set")
+                    
+                database_id = os.environ.get("NOTION_DATABASE_ID")
+                if not database_id:
+                    raise NotionFieldError("NOTION_DATABASE_ID environment variable is not set")
+                    
+                fields_json = os.environ.get("FIELDS_JSON")
+                if not fields_json:
+                    raise NotionFieldError("FIELDS_JSON environment variable is not set")
+                    
+                unique_fields = os.environ.get("UNIQUE_FIELDS", "").strip()
+                unique_fields = [f.strip() for f in unique_fields.split(',')] if unique_fields else []
+
+                try:
+                    fields = json.loads(fields_json)
+                except json.JSONDecodeError as e:
+                    raise NotionFieldError(f"Invalid JSON format in fields_json: {str(e)}")
+
+                try:
+                    df = download(
+                        database_id=database_id,
+                        notion_token=notion_token
+                    )
+                except Exception as e:
+                    raise NotionFieldError(f"Failed to download Notion database: {str(e)}")
+
+                db_schema = get_database_schema(df)
+                validate_fields(fields, db_schema)
+                
+                for field in unique_fields:
+                    if field not in db_schema:
+                        raise NotionFieldError(f"Unique field '{field}' not found in database schema")
+                
+                processed_fields = {}
+                for field, value in fields.items():
+                    try:
+                        expected_type = db_schema[field]['type']
+                        processed_fields[field] = parse_value(value, expected_type)
+                    except Exception as e:
+                        raise NotionFieldError(f"Error processing field '{field}': {str(e)}")
+                
+                new_row = pd.DataFrame([processed_fields])
+                
+                if check_duplicate(df, new_row, unique_fields):
+                    print("Skipping update: Row with the same unique field values already exists")
+                    print("Unique fields checked:", unique_fields)
+                    print("Values:", {field: processed_fields[field] for field in unique_fields})
+                    return
+                
+                updated_df = pd.concat([df, new_row], ignore_index=True)
+                
+                try:
+                    upload(
+                        df=updated_df,
+                        database_id=database_id,
+                        notion_token=notion_token,
+                        update_existing=False
+                    )
+                    print("Successfully updated Notion database")
+                    print("Added fields:", json.dumps(processed_fields, default=str, indent=2))
+                except Exception as e:
+                    raise NotionFieldError(f"Failed to upload to Notion database: {str(e)}")
+                
+            except NotionFieldError as e:
+                print(f"Validation Error: {str(e)}")
+                exit(1)
+            except Exception as e:
+                print(f"Unexpected error: {str(e)}")
+                exit(1)
+
+        if __name__ == "__main__":
+            update_notion_database()
+        EOF
+        
+        python update_notion.py
