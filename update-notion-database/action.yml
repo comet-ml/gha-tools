@@ -1,3 +1,4 @@
+# action.yml
 name: 'Update Notion Database'
 description: 'Add a new row to a Notion database with field validation and duplicate checking'
 
@@ -26,7 +27,7 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        pip install notion-df pandas numpy
+        pip install notion-client pandas
 
     - name: Update Notion Database
       shell: python
@@ -35,33 +36,50 @@ runs:
         DATABASE_ID: ${{ inputs.database_id }}
         FIELDS_JSON: ${{ inputs.fields_json }}
         UNIQUE_FIELDS: ${{ inputs.unique_fields }}
-        NOTION_API_KEY: ${{ inputs.notion_token }}
       run: |
         import os
         import json
         import sys
-        from notion_df import download, upload
+        from notion_client import Client
         import pandas as pd
-        import numpy as np
         from datetime import datetime
 
-        def safe_equals(a, b):
-            """Safely compare two values that might be of different types"""
-            try:
-                # Handle None/NaN cases
-                if pd.isna(a) and pd.isna(b):
-                    return True
-                if pd.isna(a) or pd.isna(b):
-                    return False
-                
-                # Convert to same type if possible
-                if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-                    return float(a) == float(b)
-                
-                # Convert to strings for comparison
-                return str(a).strip().lower() == str(b).strip().lower()
-            except:
-                return False
+        def get_property_value(property_item):
+            property_type = property_item['type']
+            if property_type == 'title':
+                return property_item['title'][0]['plain_text'] if property_item['title'] else ''
+            elif property_type == 'rich_text':
+                return property_item['rich_text'][0]['plain_text'] if property_item['rich_text'] else ''
+            elif property_type == 'number':
+                return property_item['number']
+            elif property_type == 'select':
+                return property_item['select']['name'] if property_item['select'] else ''
+            elif property_type == 'multi_select':
+                return [option['name'] for option in property_item['multi_select']]
+            elif property_type == 'date':
+                return property_item['date']['start'] if property_item['date'] else None
+            elif property_type == 'checkbox':
+                return property_item['checkbox']
+            return None
+
+        def create_property_value(value, property_type):
+            if property_type == 'title':
+                return {'title': [{'text': {'content': str(value)}}]}
+            elif property_type == 'rich_text':
+                return {'rich_text': [{'text': {'content': str(value)}}]}
+            elif property_type == 'number':
+                return {'number': float(value)}
+            elif property_type == 'select':
+                return {'select': {'name': str(value)}}
+            elif property_type == 'multi_select':
+                if isinstance(value, list):
+                    return {'multi_select': [{'name': str(v)} for v in value]}
+                return {'multi_select': [{'name': str(value)}]}
+            elif property_type == 'date':
+                return {'date': {'start': value}}
+            elif property_type == 'checkbox':
+                return {'checkbox': bool(value)}
+            return {'rich_text': [{'text': {'content': str(value)}}]}
 
         def main():
             try:
@@ -71,8 +89,8 @@ runs:
                 fields_json = os.environ['FIELDS_JSON']
                 unique_fields = os.environ['UNIQUE_FIELDS'].split(',')
 
-                # Set the API key explicitly
-                os.environ['NOTION_API_KEY'] = notion_token
+                # Initialize Notion client
+                notion = Client(auth=notion_token)
 
                 # Parse fields JSON
                 try:
@@ -81,40 +99,44 @@ runs:
                     print("Error: Invalid JSON format in fields_json")
                     sys.exit(1)
 
-                print("Downloading database...")
-                # Download existing database
-                df_existing = download(
-                    database_id,
-                    notion_token
-                )
-                print("Database downloaded successfully")
-                print(f"Columns in database: {df_existing.columns.tolist()}")
+                print("Querying database...")
+                
+                # Get database schema
+                database = notion.databases.retrieve(database_id)
+                properties = database['properties']
 
-                # Check for required fields
-                if not fields:
-                    print("Error: No fields provided")
-                    sys.exit(1)
+                # Query existing entries
+                results = []
+                query = notion.databases.query(database_id)
+                results.extend(query['results'])
+                while query.get('has_more'):
+                    query = notion.databases.query(
+                        database_id,
+                        start_cursor=query['next_cursor']
+                    )
+                    results.extend(query['results'])
 
-                # Create new row as DataFrame
-                new_row = pd.DataFrame([fields])
+                # Convert to DataFrame
+                data = []
+                for result in results:
+                    row = {}
+                    for prop_name, prop_data in result['properties'].items():
+                        row[prop_name] = get_property_value(prop_data)
+                    data.append(row)
+                
+                df_existing = pd.DataFrame(data)
+                print("Database queried successfully")
 
-                # Check for duplicates based on unique fields
+                # Check for duplicates
                 duplicate_found = False
                 for unique_field in unique_fields:
-                    if unique_field not in df_existing.columns:
-                        print(f"Warning: Unique field '{unique_field}' not found in database")
+                    if unique_field not in fields:
                         continue
                     
-                    if unique_field in fields:
+                    if unique_field in df_existing.columns:
                         new_value = fields[unique_field]
-                        print(f"Checking for duplicates in field '{unique_field}' with value: {new_value}")
-                        
-                        # Use custom comparison function
-                        duplicate_mask = df_existing[unique_field].apply(
-                            lambda x: safe_equals(x, new_value)
-                        )
-                        
-                        if duplicate_mask.any():
+                        existing_values = df_existing[unique_field].fillna('')
+                        if any(str(val).lower() == str(new_value).lower() for val in existing_values):
                             duplicate_found = True
                             print(f"Duplicate entry found for field '{unique_field}'")
                             break
@@ -123,22 +145,22 @@ runs:
                     print("Skipping upload due to duplicate entry")
                     sys.exit(0)
 
-                # Append new row and upload
-                df_updated = pd.concat([df_existing, new_row], ignore_index=True)
-                
-                print("Uploading updated database...")
-                upload(
-                    df_updated,
-                    database_id,
-                    notion_token,
-                    chunk_size=1
+                # Prepare properties for new page
+                new_properties = {}
+                for field_name, field_value in fields.items():
+                    if field_name in properties:
+                        prop_type = properties[field_name]['type']
+                        new_properties[field_name] = create_property_value(field_value, prop_type)
+
+                # Create new page
+                print("Creating new page...")
+                notion.pages.create(
+                    parent={'database_id': database_id},
+                    properties=new_properties
                 )
 
                 print("Successfully updated Notion database")
 
-            except KeyError as e:
-                print(f"Error: Missing required environment variable: {str(e)}")
-                sys.exit(1)
             except Exception as e:
                 print(f"Error: {str(e)}")
                 print(f"Error type: {type(e)}")
