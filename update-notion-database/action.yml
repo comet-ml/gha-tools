@@ -38,6 +38,12 @@ runs:
         FIELDS_JSON: ${{ inputs.fields_json }}
         UNIQUE_FIELDS: ${{ inputs.unique_fields }}
       run: |
+        echo "DEBUG:"
+        echo "NOTION_TOKEN is ${NOTION_TOKEN}"
+        echo "NOTION_DATABASE_ID is ${NOTION_DATABASE_ID}"
+        echo "FIELDS_JSON is ${FIELDS_JSON}"
+        echo "UNIQUE_FIELDS is ${UNIQUE_FIELDS}"
+
         cat << 'EOF' > update_notion.py
         import os
         import json
