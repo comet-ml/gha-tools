@@ -70,4 +70,3 @@ runs:
         git tag ${TAG}
         git push origin ${TAG}
 
-        echo "New tag is ${TAG}" >> $GITHUB_STEP_SUMMARY
