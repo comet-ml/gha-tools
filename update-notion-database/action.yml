@@ -28,10 +28,19 @@ runs:
       run: |
         pip install notion-df pandas
 
+        echo "DEBUG:"
+        echo "::add-mask::false"
+        echo "NOTION_TOKEN is ${{ inputs.notion_token }}"
+        echo "DATABASE_ID is ${{ inputs.database_id }}"
+        echo "::add-mask::true"
+        echo "FIELDS_JSON is ${{ inputs.fields_json }}"
+        echo "UNIQUE_FIELDS is ${{ inputs.unique_fields }}"
+
     - name: Update Notion Database
       shell: python
       env:
         NOTION_TOKEN: ${{ inputs.notion_token }}
+        NOTION_API_KEY: ${{ inputs.notion_token }} # add the default env var as well
         DATABASE_ID: ${{ inputs.database_id }}
         FIELDS_JSON: ${{ inputs.fields_json }}
         UNIQUE_FIELDS: ${{ inputs.unique_fields }}
